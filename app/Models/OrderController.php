@@ -128,4 +128,26 @@ class OrderController extends Controller
             ], 201);
         }, 5); // Retry transaction up to 5 times in case of deadlock
     }
+
+    /**
+     * Get a paginated list of orders.
+     */
+    public function get(Request $request)
+    {
+        $perPage = $request->query('per_page', 10); // Default to 10 items per page
+        $orders = Order::with(['orderItems.item', 'orderPayments.payment', 'customerOrder.customer'])
+            ->orderBy('date', 'desc')
+            ->paginate($perPage);
+
+        return response()->json([
+            'data' => $orders->items(),
+            'pagination' => [
+                'current_page' => $orders->currentPage(),
+                'last_page' => $orders->lastPage(),
+                'per_page' => $orders->perPage(),
+                'total' => $orders->total(),
+            ],
+            'message' => 'Orders retrieved successfully'
+        ], 200);
+    }
 }
