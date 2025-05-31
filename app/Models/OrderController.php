@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Log;
 class OrderController extends Controller
 {
     /**
-     * Store a new order.
+     * Store a new order.   yeye
      */
     public function store(Request $request)
     {
