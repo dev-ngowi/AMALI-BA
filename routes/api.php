@@ -26,18 +26,20 @@ use App\Http\Controllers\UnitController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VendorController;
 
-// Optional: Only protect this route with sanctum
+// Protect this route with sanctum
 Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
     return $request->user();
 });
 
-// // ✅ Public or protected routes for tenant management
-// Route::get('/tenants', [TenantController::class, 'index']);
-// Route::post('/tenants', [TenantController::class, 'store']);
+// User Routes
+Route::get('/users', [UserController::class, 'index']);
+Route::post('/users', [UserController::class, 'store']);
+Route::post('/login', [UserController::class, 'login']);
 
-//ITEM GROUP 
+// ITEM GROUP 
 Route::get('/item_groups', [ItemGroupController::class, 'index']);
 Route::post('/item_groups', [ItemGroupController::class, 'store']);
+Route::get('/item_groups/check-name', [ItemGroupController::class, 'checkName']);
 
 // CATEGORY
 Route::get('/categories', [CategoryController::class, 'index']);
@@ -57,7 +59,10 @@ Route::post('/cities', [CityController::class, 'store']);
 
 // VENDOR
 Route::get('/vendors', [VendorController::class, 'index']);
+Route::get('/vendors/{id}', [VendorController::class, 'show']);
 Route::post('/vendors', [VendorController::class, 'store']);
+Route::put('/vendors/{id}', [VendorController::class, 'update']);
+Route::delete('/vendors/{id}', [VendorController::class, 'destroy']);
 
 // PURCHASE ORDER
 Route::get('/purchase_orders', [PurchaseController::class, 'indexPurchaseOrders']);
@@ -159,11 +164,8 @@ Route::delete('/item_types/{id}', [ItemTypeController::class, 'destroy']);
 
 // ORDER
 Route::post('/orders', [OrderController::class, 'store']);
+Route::get('/orders', [OrderController::class, 'get']);
 Route::get('/orders/{id}', [OrderController::class, 'show']);
-
-// User Routes
-Route::get('/users', [UserController::class, 'index']);
-Route::post('/users', [UserController::class, 'store']);
 
 // ITEM BRAND
 Route::get('/item_brands', [BrandController::class, 'index']);
