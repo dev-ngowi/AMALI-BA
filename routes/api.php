@@ -59,7 +59,10 @@ Route::post('/cities', [CityController::class, 'store']);
 
 // VENDOR
 Route::get('/vendors', [VendorController::class, 'index']);
+Route::get('/vendors/{id}', [VendorController::class, 'show']);
 Route::post('/vendors', [VendorController::class, 'store']);
+Route::put('/vendors/{id}', [VendorController::class, 'update']);
+Route::delete('/vendors/{id}', [VendorController::class, 'destroy']);
 
 // PURCHASE ORDER
 Route::get('/purchase_orders', [PurchaseController::class, 'indexPurchaseOrders']);

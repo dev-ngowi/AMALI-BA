@@ -7,17 +7,17 @@ use Illuminate\Database\Eloquent\Model;
 class Vendor extends Model
 {
     protected $fillable = [
-        'name',
-        'email',
-        'phone',
-        'address',
-        'city_id',
-        'state',
-        'postal_code',
-        'country_id',
-        'contact_person',
-        'tin',
-        'vrn',
-        'status'
+        'id', 'name', 'email', 'phone', 'address', 'city_id', 'state',
+        'postal_code', 'country_id', 'contact_person', 'tin', 'vrn', 'status'
     ];
+
+    public function city()
+    {
+        return $this->belongsTo(City::class);
+    }
+
+    public function country()
+    {
+        return $this->belongsTo(Country::class);
+    }
 }
