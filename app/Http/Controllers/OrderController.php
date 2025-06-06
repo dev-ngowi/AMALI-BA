@@ -14,11 +14,10 @@ use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
-
 class OrderController extends Controller
 {
     /**
-     * Store a new order.   yeye
+     * Store a new order.
      */
     public function store(Request $request)
     {
@@ -43,9 +42,13 @@ class OrderController extends Controller
             ]);
 
             if ($validator->fails()) {
+                Log::warning('Validation failed for order creation', [
+                    'errors' => $validator->errors()->toArray(),
+                    'request' => $request->all()
+                ]);
                 return response()->json([
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors()->toArray()
                 ], 422);
             }
 
@@ -59,8 +62,20 @@ class OrderController extends Controller
                 })->first();
 
                 if (!$stock || $stock->stock_quantity < $item['quantity']) {
+                    Log::warning("Insufficient stock for item ID {$item['item_id']}", [
+                        'item_id' => $item['item_id'],
+                        'store_id' => $request->order_data['store_id'],
+                        'requested_quantity' => $item['quantity'],
+                        'available_quantity' => $stock ? $stock->stock_quantity : 0
+                    ]);
                     return response()->json([
-                        'message' => "Insufficient stock for item ID {$item['item_id']}"
+                        'message' => "Insufficient stock for item ID {$item['item_id']}",
+                        'details' => [
+                            'item_id' => $item['item_id'],
+                            'store_id' => $request->order_data['store_id'],
+                            'requested_quantity' => $item['quantity'],
+                            'available_quantity' => $stock ? $stock->stock_quantity : 0
+                        ]
                     ], 422);
                 }
             }
@@ -109,6 +124,11 @@ class OrderController extends Controller
                     ]);
 
                     if ($updated === 0) {
+                        Log::error("Failed to update stock for item ID {$item['item_id']}", [
+                            'item_id' => $item['item_id'],
+                            'store_id' => $request->order_data['store_id'],
+                            'quantity' => $item['quantity']
+                        ]);
                         throw new \Exception("Failed to update stock for item ID {$item['item_id']}");
                     }
                 }
@@ -129,6 +149,7 @@ class OrderController extends Controller
                     ]);
                 }
 
+                Log::info('Order created successfully', ['order_id' => $order->id, 'order_number' => $order->order_number]);
                 return response()->json([
                     'data' => ['order_id' => $order->id],
                     'message' => 'Order created successfully'
@@ -137,42 +158,119 @@ class OrderController extends Controller
         } catch (\Exception $e) {
             Log::error('Failed to create order: ' . $e->getMessage(), [
                 'request' => $request->all(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
             ]);
             return response()->json([
                 'message' => 'Internal server error',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'details' => [
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ]
             ], 500);
         }
     }
 
     /**
-     * Get a paginated list of orders.
+     * Get a paginated list of orders or a specific order by order_number/receipt_number.
      */
     public function get(Request $request)
     {
-        $perPage = $request->query('per_page', 10); 
-        $orders = Order::with(['orderItems.item', 'orderPayments.payment', 'customerOrder.customer'])
-            ->orderBy('date', 'desc')
-            ->paginate($perPage);
+        try {
+            $perPage = $request->query('per_page', 10);
+            $query = Order::with(['orderItems.item', 'orderPayments.payment', 'customerOrder.customer'])
+                ->orderBy('date', 'desc');
 
-        return response()->json([
-            'data' => $orders->items(),
-            'pagination' => [
-                'current_page' => $orders->currentPage(),
-                'last_page' => $orders->lastPage(),
-                'per_page' => $orders->perPage(),
-                'total' => $orders->total(),
-            ],
-            'message' => 'Orders retrieved successfully'
-        ], 200);
+            // Support filtering by order_number or receipt_number
+            if ($request->query('order_number')) {
+                $query->where('order_number', $request->query('order_number'));
+            }
+            if ($request->query('receipt_number')) {
+                $query->where('receipt_number', $request->query('receipt_number'));
+            }
+
+            $orders = $query->paginate($perPage);
+
+            return response()->json([
+                'data' => $orders->items(),
+                'pagination' => [
+                    'current_page' => $orders->currentPage(),
+                    'last_page' => $orders->lastPage(),
+                    'per_page' => $orders->perPage(),
+                    'total' => $orders->total(),
+                ],
+                'message' => 'Orders retrieved successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve orders: ' . $e->getMessage(), [
+                'request' => $request->all(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Internal server error',
+                'error' => $e->getMessage(),
+                'details' => [
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ]
+            ], 500);
+        }
     }
 
+    /**
+     * Get a specific order by ID.
+     */
+    public function show($id)
+    {
+        try {
+            $order = Order::with(['orderItems.item', 'orderPayments.payment', 'customerOrder.customer'])
+                ->find($id);
+
+            if (!$order) {
+                Log::warning("Order with ID {$id} not found");
+                return response()->json([
+                    'message' => "Order with ID {$id} not found"
+                ], 404);
+            }
+
+            return response()->json([
+                'data' => $order,
+                'message' => 'Order retrieved successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve order: ' . $e->getMessage(), [
+                'order_id' => $id,
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Internal server error',
+                'error' => $e->getMessage(),
+                'details' => [
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ]
+            ], 500);
+        }
+    }
+
+    /**
+     * Update an existing order.
+     */
     public function update(Request $request, $id)
     {
         try {
             $order = Order::find($id);
             if (!$order) {
+                Log::warning("Order with ID {$id} not found", ['request' => $request->all()]);
                 return response()->json([
                     'message' => "Order with ID {$id} not found"
                 ], 404);
@@ -198,9 +296,14 @@ class OrderController extends Controller
             ]);
 
             if ($validator->fails()) {
+                Log::warning('Validation failed for order update', [
+                    'order_id' => $id,
+                    'errors' => $validator->errors()->toArray(),
+                    'request' => $request->all()
+                ]);
                 return response()->json([
                     'message' => 'Validation failed',
-                    'errors' => $validator->errors()
+                    'errors' => $validator->errors()->toArray()
                 ], 422);
             }
 
@@ -214,8 +317,20 @@ class OrderController extends Controller
                 })->first();
 
                 if (!$stock || $stock->stock_quantity < $item['quantity']) {
+                    Log::warning("Insufficient stock for item ID {$item['item_id']}", [
+                        'item_id' => $item['item_id'],
+                        'store_id' => $request->order_data['store_id'],
+                        'requested_quantity' => $item['quantity'],
+                        'available_quantity' => $stock ? $stock->stock_quantity : 0
+                    ]);
                     return response()->json([
-                        'message' => "Insufficient stock for item ID {$item['item_id']}"
+                        'message' => "Insufficient stock for item ID {$item['item_id']}",
+                        'details' => [
+                            'item_id' => $item['item_id'],
+                            'store_id' => $request->order_data['store_id'],
+                            'requested_quantity' => $item['quantity'],
+                            'available_quantity' => $stock ? $stock->stock_quantity : 0
+                        ]
                     ], 422);
                 }
             }
@@ -262,6 +377,11 @@ class OrderController extends Controller
                     ]);
 
                     if ($updated === 0) {
+                        Log::error("Failed to update stock for item ID {$item['item_id']}", [
+                            'item_id' => $item['item_id'],
+                            'store_id' => $request->order_data['store_id'],
+                            'quantity' => $item['quantity']
+                        ]);
                         throw new \Exception("Failed to update stock for item ID {$item['item_id']}");
                     }
                 }
@@ -284,6 +404,7 @@ class OrderController extends Controller
                     ]);
                 }
 
+                Log::info('Order updated successfully', ['order_id' => $order->id, 'order_number' => $order->order_number]);
                 return response()->json([
                     'data' => ['order_id' => $order->id],
                     'message' => 'Order updated successfully'
@@ -293,11 +414,18 @@ class OrderController extends Controller
             Log::error('Failed to update order: ' . $e->getMessage(), [
                 'order_id' => $id,
                 'request' => $request->all(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
             ]);
             return response()->json([
                 'message' => 'Internal server error',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'details' => [
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ]
             ], 500);
         }
     }

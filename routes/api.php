@@ -68,9 +68,16 @@ Route::delete('/vendors/{id}', [VendorController::class, 'destroy']);
 Route::get('/purchase_orders', [PurchaseController::class, 'indexPurchaseOrders']);
 Route::post('/purchase_orders', [PurchaseController::class, 'createPurchaseOrder']);
 
-// GOOD RECEIPT NOTE
+// Purchase Order Routes
+Route::get('/purchase_orders', [PurchaseController::class, 'indexPurchaseOrders']);
+Route::post('/purchase_orders', [PurchaseController::class, 'createPurchaseOrder']);
+
+// Good Receipt Note Routes
 Route::get('/good_receipt_notes', [PurchaseController::class, 'indexGoodReceiptNotes']);
 Route::post('/good_receipt_notes', [PurchaseController::class, 'createGoodReceiptNote']);
+
+// Day Status Route
+Route::get('/day_status', [PurchaseController::class, 'checkDayStatus']);
 
 // EXPENSE
 Route::get('/expenses', [ExpenseController::class, 'index']);

@@ -9,20 +9,29 @@ use App\Models\GoodReceiveNoteItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 class PurchaseController extends Controller
 {
-    public function indexPurchaseOrders()
+    /**
+     * Retrieve all purchase orders with their items.
+     */
+    public function indexPurchaseOrders(Request $request)
     {
-        $data = PurchaseOrder::with('items')->get();
+        $query = PurchaseOrder::with('items');
+        if ($request->has('order_number')) {
+            $query->where('order_number', $request->input('order_number'));
+        }
+        $data = $query->get();
         return response()->json([
             'data' => $data,
             'message' => 'success'
         ], 200);
     }
 
+    /**
+     * Create a new purchase order.
+     */
     public function createPurchaseOrder(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -31,13 +40,14 @@ class PurchaseController extends Controller
             'store_id' => 'required|exists:stores,id',
             'order_date' => 'required|date',
             'expected_delivery_date' => 'nullable|date|after_or_equal:order_date',
-            'status' => 'nullable|in:Pending,Draft,Received,Paid,Cancelled',
+            'status' => 'nullable|in:Draft,Pending,Approved,Completed,Cancelled',
             'currency' => 'nullable|string|in:TZS,USD,EUR',
             'notes' => 'nullable|string',
+            'total_amount' => 'nullable|numeric|min:0',
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|exists:items,id',
             'items.*.unit_id' => 'required|exists:units,id',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity' => 'required|numeric|min:1',
             'items.*.discount' => 'nullable|numeric|min:0',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.selling_price' => 'required|numeric|min:0',
@@ -53,7 +63,7 @@ class PurchaseController extends Controller
             ], 422);
         }
 
-        // Validate day status (assuming day_open and day_close tables exist)
+        // Validate day status
         $dayOpen = DB::table('day_open')
             ->where('store_id', $request->store_id)
             ->where('working_date', Carbon::parse($request->order_date)->format('Y-m-d'))
@@ -62,7 +72,7 @@ class PurchaseController extends Controller
 
         if (!$dayOpen) {
             return response()->json([
-                'message' => 'Cannot create purchase order for an unopened day'
+                'message' => 'Cannot create purchase order: Day is not open'
             ], 422);
         }
 
@@ -74,13 +84,13 @@ class PurchaseController extends Controller
 
         if ($dayClosed) {
             return response()->json([
-                'message' => 'Cannot create purchase order for a closed day'
+                'message' => 'Cannot create purchase order: Day is closed'
             ], 422);
         }
 
         return DB::transaction(function () use ($request) {
-            // Calculate total amount
-            $totalAmount = collect($request->items)->sum('total_price');
+            // Calculate total amount if not provided
+            $totalAmount = $request->total_amount ?? collect($request->items)->sum('total_price');
 
             // Create purchase order
             $purchaseOrder = PurchaseOrder::create([
@@ -92,7 +102,9 @@ class PurchaseController extends Controller
                 'status' => $request->status ?? 'Pending',
                 'total_amount' => $totalAmount,
                 'currency' => $request->currency ?? 'TZS',
-                'notes' => $request->notes
+                'notes' => $request->notes,
+                'created_at' => now(),
+                'updated_at' => now()
             ]);
 
             // Create purchase order items
@@ -107,13 +119,10 @@ class PurchaseController extends Controller
                     'selling_price' => $item['selling_price'],
                     'selling_unit_id' => $item['selling_unit_id'],
                     'tax_id' => $item['tax_id'] ?? null,
-                    'total_price' => $item['total_price']
+                    'total_price' => $item['total_price'],
+                    'created_at' => now(),
+                    'updated_at' => now()
                 ]);
-            }
-
-            // Save purchase transaction if status is Received
-            if ($request->status === 'Received') {
-                $this->savePurchaseTransaction($purchaseOrder);
             }
 
             return response()->json([
@@ -123,6 +132,9 @@ class PurchaseController extends Controller
         });
     }
 
+    /**
+     * Retrieve all good receipt notes with their items.
+     */
     public function indexGoodReceiptNotes()
     {
         $data = GoodReceiptNote::with('items')->get();
@@ -132,6 +144,9 @@ class PurchaseController extends Controller
         ], 200);
     }
 
+    /**
+     * Create a new good receipt note.
+     */
     public function createGoodReceiptNote(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -164,7 +179,7 @@ class PurchaseController extends Controller
         }
 
         // Validate purchase order
-        $purchaseOrder = PurchaseOrder::find($request->purchase_order_id);
+        $purchaseOrder = PurchaseOrder::findOrFail($request->purchase_order_id);
         if ($purchaseOrder->status === 'Received') {
             return response()->json([
                 'message' => 'Purchase order already received'
@@ -179,27 +194,28 @@ class PurchaseController extends Controller
         }
 
         // Validate day status
+        $storeId = $request->store_id ?? $purchaseOrder->store_id;
         $dayOpen = DB::table('day_open')
-            ->where('store_id', $request->store_id ?? $purchaseOrder->store_id)
+            ->where('store_id', $storeId)
             ->where('working_date', Carbon::parse($request->received_date)->format('Y-m-d'))
             ->where('is_open', 1)
             ->first();
 
         if (!$dayOpen) {
             return response()->json([
-                'message' => 'Cannot create GRN for an unopened day'
+                'message' => 'Cannot create GRN: Day is not open'
             ], 422);
         }
 
         $dayClosed = DB::table('day_close')
-            ->where('store_id', $request->store_id ?? $purchaseOrder->store_id)
+            ->where('store_id', $storeId)
             ->where('working_date', Carbon::parse($request->received_date)->format('Y-m-d'))
             ->where('is_locked', 1)
             ->first();
 
         if ($dayClosed) {
             return response()->json([
-                'message' => 'Cannot create GRN for a closed day'
+                'message' => 'Cannot create GRN: Day is closed'
             ], 422);
         }
 
@@ -217,7 +233,9 @@ class PurchaseController extends Controller
                 'received_date' => $request->received_date,
                 'delivery_note_number' => $request->delivery_note_number,
                 'status' => $request->status ?? 'Pending',
-                'remarks' => $request->remarks
+                'remarks' => $request->remarks,
+                'created_at' => now(),
+                'updated_at' => now()
             ]);
 
             // Create GRN items
@@ -233,16 +251,15 @@ class PurchaseController extends Controller
                     'unit_price' => $item['unit_price'],
                     'selling_price' => $item['selling_price'],
                     'unit_id' => $item['unit_id'],
-                    'received_condition' => $item['received_condition'] ?? 'Good'
+                    'received_condition' => $item['received_condition'] ?? 'Good',
+                    'created_at' => now(),
+                    'updated_at' => now()
                 ]);
             }
 
-            // If status is Received, update purchase order, stock, and prices
+            // Update purchase order status if GRN is Received
             if ($request->status === 'Received') {
                 $purchaseOrder->update(['status' => 'Received']);
-                $this->savePurchaseTransaction($purchaseOrder);
-                $this->updateStockFromGrn($grn);
-                $this->updateItemPricesFromGrn($grn, $grn->store_id);
             }
 
             return response()->json([
@@ -252,119 +269,39 @@ class PurchaseController extends Controller
         });
     }
 
-    private function savePurchaseTransaction(PurchaseOrder $purchaseOrder)
+    /**
+     * Check day status for a store on a specific date.
+     */
+    public function checkDayStatus(Request $request)
     {
-        // Assuming chart_of_accounts, purchase_transactions, and general_ledger tables exist
-        $inventoryAccount = DB::table('chart_of_accounts')
-            ->where('account_name', 'Inventory')
-            ->where('account_type', 'Asset')
+        $validator = Validator::make($request->all(), [
+            'store_id' => 'required|exists:stores,id',
+            'working_date' => 'required|date'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $dayOpen = DB::table('day_open')
+            ->where('store_id', $request->store_id)
+            ->where('working_date', Carbon::parse($request->working_date)->format('Y-m-d'))
+            ->where('is_open', 1)
             ->first();
 
-        if (!$inventoryAccount) {
-            throw new \Exception('Inventory account not found');
-        }
+        $dayClosed = DB::table('day_close')
+            ->where('store_id', $request->store_id)
+            ->where('working_date', Carbon::parse($request->working_date)->format('Y-m-d'))
+            ->where('is_locked', 1)
+            ->first();
 
-        $ledgerEntry = DB::table('general_ledger')->insertGetId([
-            'transaction_date' => Carbon::parse($purchaseOrder->order_date)->format('Y-m-d'),
-            'account_id' => $inventoryAccount->id,
-            'description' => "Inventory received for Purchase Order #{$purchaseOrder->id}",
-            'debit_amount' => $purchaseOrder->total_amount,
-            'credit_amount' => 0.00,
-            'reference_type' => 'Purchase',
-            'reference_id' => $purchaseOrder->id,
-            'store_id' => $purchaseOrder->store_id,
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now()
-        ]);
-
-        DB::table('purchase_transactions')->insert([
-            'purchase_order_id' => $purchaseOrder->id,
-            'account_id' => $inventoryAccount->id,
-            'amount' => $purchaseOrder->total_amount,
-            'transaction_type' => 'Purchase',
-            'ledger_entry_id' => $ledgerEntry,
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now()
-        ]);
-    }
-
-    private function updateStockFromGrn(GoodReceiptNote $grn)
-    {
-        foreach ($grn->items as $item) {
-            $stock = DB::table('item_stocks')
-                ->where('item_id', $item->item_id)
-                ->where('stock_id', $grn->store_id)
-                ->first();
-
-            if ($stock) {
-                DB::table('item_stocks')
-                    ->where('id', $stock->id)
-                    ->update([
-                        'stock_quantity' => $stock->stock_quantity + $item->accepted_quantity,
-                        'updated_at' => Carbon::now()
-                    ]);
-            } else {
-                DB::table('item_stocks')->insert([
-                    'item_id' => $item->item_id,
-                    'stock_id' => $grn->store_id,
-                    'stock_quantity' => $item->accepted_quantity,
-                    'created_at' => Carbon::now(),
-                    'updated_at' => Carbon::now()
-                ]);
-            }
-        }
-    }
-
-    private function updateItemPricesFromGrn(GoodReceiptNote $grn, $storeId)
-    {
-        foreach ($grn->items as $item) {
-            $itemCost = DB::table('item_costs')
-                ->where('item_id', $item->item_id)
-                ->where('store_id', $storeId)
-                ->where('unit_id', $item->unit_id)
-                ->first();
-
-            if ($itemCost) {
-                DB::table('item_costs')
-                    ->where('id', $itemCost->id)
-                    ->update([
-                        'amount' => $item->unit_price,
-                        'updated_at' => Carbon::now()
-                    ]);
-            } else {
-                DB::table('item_costs')->insert([
-                    'item_id' => $item->item_id,
-                    'store_id' => $storeId,
-                    'unit_id' => $item->unit_id,
-                    'amount' => $item->unit_price,
-                    'created_at' => Carbon::now(),
-                    'updated_at' => Carbon::now()
-                ]);
-            }
-
-            $itemPrice = DB::table('item_prices')
-                ->where('item_id', $item->item_id)
-                ->where('store_id', $storeId)
-                ->where('unit_id', $item->unit_id)
-                ->first();
-
-            if ($itemPrice) {
-                DB::table('item_prices')
-                    ->where('id', $itemPrice->id)
-                    ->update([
-                        'amount' => $item->selling_price,
-                        'updated_at' => Carbon::now()
-                    ]);
-            } else {
-                DB::table('item_prices')->insert([
-                    'item_id' => $item->item_id,
-                    'store_id' => $storeId,
-                    'unit_id' => $item->unit_id,
-                    'amount' => $item->selling_price,
-                    'created_at' => Carbon::now(),
-                    'updated_at' => Carbon::now()
-                ]);
-            }
-        }
+        return response()->json([
+            'is_open' => !!$dayOpen,
+            'is_closed' => !!$dayClosed,
+            'message' => 'success'
+        ], 200);
     }
 }
