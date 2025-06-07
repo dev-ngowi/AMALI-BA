@@ -18,6 +18,7 @@ return new class extends Migration
             $table->foreignId('payment_type_id')->nullable()->constrained()->nullOnDelete();
             $table->timestamp('created_at')->nullable();
             $table->timestamp('updated_at')->nullable(); // Added ->nullable()
+            $table->timestamp('updated_at');
             $table->index('payment_type_id');
         });
     }

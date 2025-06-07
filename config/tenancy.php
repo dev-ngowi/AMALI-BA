@@ -6,19 +6,12 @@ use Stancl\Tenancy\Database\Models\Domain;
 use Stancl\Tenancy\Database\Models\Tenant;
 
 return [
-    'tenant_model' => Tenant::class,
-    'id_generator' => Stancl\Tenancy\UUIDGenerator::class,
+    'tenant_model' => \Stancl\Tenancy\Database\Models\Tenant::class,
+    'id_generator' => \Stancl\Tenancy\UUIDGenerator::class,
 
-    'domain_model' => Domain::class,
-
-    /**
-     * The list of domains hosting your central app.
-     *
-     * Only relevant if you're using the domain or subdomain identification middleware.
-     */
-    'central_domains' => [
-        '127.0.0.1',
-        'localhost',
+    // Identify tenants by domain
+    'tenant_identification' => [
+        'by' => 'domain',
     ],
 
     /**
@@ -38,42 +31,50 @@ return [
     /**
      * Database tenancy config. Used by DatabaseTenancyBootstrapper.
      */
+    // 'database' => [
+    //     'central_connection' => env('DB_CONNECTION', 'central'),
+
+    //     /**
+    //      * Connection used as a "template" for the dynamically created tenant database connection.
+    //      * Note: don't name your template connection tenant. That name is reserved by package.
+    //      */
+    //     'template_tenant_connection' => null,
+
+    //     /**
+    //      * Tenant database names are created like this:
+    //      * prefix + tenant_id + suffix.
+    //      */
+    //     'prefix' => 'tenant',
+    //     'suffix' => '',
+
+    //     /**
+    //      * TenantDatabaseManagers are classes that handle the creation & deletion of tenant databases.
+    //      */
+    //     'managers' => [
+    //         'sqlite' => Stancl\Tenancy\TenantDatabaseManagers\SQLiteDatabaseManager::class,
+    //         'mysql' => Stancl\Tenancy\TenantDatabaseManagers\MySQLDatabaseManager::class,
+    //         'pgsql' => Stancl\Tenancy\TenantDatabaseManagers\PostgreSQLDatabaseManager::class,
+
+    //     /**
+    //      * Use this database manager for MySQL to have a DB user created for each tenant database.
+    //      * You can customize the grants given to these users by changing the $grants property.
+    //      */
+    //         // 'mysql' => Stancl\Tenancy\TenantDatabaseManagers\PermissionControlledMySQLDatabaseManager::class,
+
+    //     /**
+    //      * Disable the pgsql manager above, and enable the one below if you
+    //      * want to separate tenant DBs by schemas rather than databases.
+    //      */
+    //         // 'pgsql' => Stancl\Tenancy\TenantDatabaseManagers\PostgreSQLSchemaManager::class, // Separate by schema instead of database
+    //     ],
+    // ],
+
     'database' => [
-        'central_connection' => env('DB_CONNECTION', 'central'),
-
-        /**
-         * Connection used as a "template" for the dynamically created tenant database connection.
-         * Note: don't name your template connection tenant. That name is reserved by package.
-         */
-        'template_tenant_connection' => null,
-
-        /**
-         * Tenant database names are created like this:
-         * prefix + tenant_id + suffix.
-         */
-        'prefix' => 'tenant',
+        'central_connection' => env('DB_CONNECTION', 'mysql'),
+        'template_tenant_connection' => 'tenant',
+        'based_on' => 'mysql',
+        'prefix' => 'tenant_', // Databases will be named tenant_<id>
         'suffix' => '',
-
-        /**
-         * TenantDatabaseManagers are classes that handle the creation & deletion of tenant databases.
-         */
-        'managers' => [
-            'sqlite' => Stancl\Tenancy\TenantDatabaseManagers\SQLiteDatabaseManager::class,
-            'mysql' => Stancl\Tenancy\TenantDatabaseManagers\MySQLDatabaseManager::class,
-            'pgsql' => Stancl\Tenancy\TenantDatabaseManagers\PostgreSQLDatabaseManager::class,
-
-        /**
-         * Use this database manager for MySQL to have a DB user created for each tenant database.
-         * You can customize the grants given to these users by changing the $grants property.
-         */
-            // 'mysql' => Stancl\Tenancy\TenantDatabaseManagers\PermissionControlledMySQLDatabaseManager::class,
-
-        /**
-         * Disable the pgsql manager above, and enable the one below if you
-         * want to separate tenant DBs by schemas rather than databases.
-         */
-            // 'pgsql' => Stancl\Tenancy\TenantDatabaseManagers\PostgreSQLSchemaManager::class, // Separate by schema instead of database
-        ],
     ],
 
     /**
@@ -169,6 +170,9 @@ return [
         // Stancl\Tenancy\Features\TenantConfig::class, // https://tenancyforlaravel.com/docs/v3/features/tenant-config
         // Stancl\Tenancy\Features\CrossDomainRedirect::class, // https://tenancyforlaravel.com/docs/v3/features/cross-domain-redirect
         // Stancl\Tenancy\Features\ViteBundler::class,
+        \Stancl\Tenancy\Features\TenantConfig::class, // Optional, for tenant-specific config
+        \Stancl\Tenancy\Features\TelescopeTags::class, // Optional, if using Telescope
+        \Stancl\Tenancy\Features\UniversalRoutes::class, // Optional, for sh
     ],
 
     /**
