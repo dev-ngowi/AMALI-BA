@@ -25,20 +25,12 @@ use App\Http\Controllers\TaxController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VendorController;
-use App\Http\Controllers\TenantController;
 
 // Protect this route with sanctum
 Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::middleware('auth:sanctum')->prefix('tenants')->group(function () {
-    Route::get('/', [TenantController::class, 'index'])->name('tenants.index');
-    Route::post('/', [TenantController::class, 'store'])->name('tenants.store');
-    Route::get('{id}', [TenantController::class, 'show'])->name('tenants.show');
-    Route::put('{id}', [TenantController::class, 'update'])->name('tenants.update');
-    Route::delete('{id}', [TenantController::class, 'destroy'])->name('tenants.destroy');
-});
 
 // User Routes
 Route::get('/users', [UserController::class, 'index']);

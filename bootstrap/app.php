@@ -12,21 +12,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Add tenancy middleware to web routes
-        $middleware->web(append: [
-            \Stancl\Tenancy\Middleware\InitializeTenancyByDomain::class,
-        ]);
-
-        // Add tenancy middleware to API routes
         $middleware->api(prepend: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
-            \Stancl\Tenancy\Middleware\InitializeTenancyByDomain::class,
         ]);
 
-        // Keep existing middleware aliases
         $middleware->alias([
             'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
         ]);
+
+        //
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
