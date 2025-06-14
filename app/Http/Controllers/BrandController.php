@@ -6,34 +6,54 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 
 class BrandController extends Controller
 {
     /**
-     * Display a listing of the item brands.
+     * Display a paginated listing of the item brands.
      */
-    public function index(Request $request)
+        public function index(Request $request)
     {
         try {
+            $perPage = $request->input('per_page', 10);
+            $page = $request->input('page', 1); // This line is crucial
+            $search = $request->input('search');
+            $isActive = $request->input('is_active');
+    
+            Log::info('DEBUG: Page requested by frontend', ['requested_page' => $page]); // ADD THIS LINE
+    
             $query = DB::table('item_brands');
-
-            // Filter by is_active if provided
-            if ($request->has('is_active')) {
-                $query->where('is_active', $request->input('is_active') === 'true' ? 1 : 0);
+    
+            if ($request->has('is_active') && in_array($isActive, ['true', 'false'])) {
+                $query->where('is_active', $isActive === 'true' ? 1 : 0);
             }
-
-            // Search by name if provided
-            if ($request->has('search')) {
-                $query->where('name', 'like', '%' . $request->input('search') . '%');
+    
+            if ($search) {
+                $query->where('name', 'like', '%' . $search . '%');
             }
-
-            $brands = $query->get();
-
+    
+            $brands = $query->paginate($perPage);
+    
+            Log::info('Fetched item brands', [
+                'query' => $query->toSql(),
+                'bindings' => $query->getBindings(),
+                'count' => $brands->total(),
+                'requested_page_variable' => $page, // The $page variable
+                'paginator_current_page' => $brands->currentPage(), // The actual current page from paginator
+                'per_page' => $perPage
+            ]);
+    
             return response()->json([
-                'data' => $brands,
+                'data' => $brands->items(),
+                'current_page' => $brands->currentPage(),
+                'per_page' => $brands->perPage(),
+                'total' => $brands->total(),
+                'last_page' => $brands->lastPage(),
                 'message' => 'Item brands retrieved successfully'
             ], 200);
         } catch (\Exception $e) {
+            Log::error('Failed to retrieve item brands', ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'Failed to retrieve item brands',
                 'error' => $e->getMessage()
@@ -53,6 +73,10 @@ class BrandController extends Controller
         ]);
 
         if ($validator->fails()) {
+            Log::error('Validation failed for item brand creation', [
+                'errors' => $validator->errors(),
+                'request' => $request->all()
+            ]);
             return response()->json([
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
@@ -72,12 +96,26 @@ class BrandController extends Controller
             ]);
 
             $newBrand = DB::table('item_brands')->where('id', $brand)->first();
+            Log::info('Item brand created successfully', ['brand' => $newBrand]);
 
             return response()->json([
                 'data' => $newBrand,
                 'message' => 'Item brand created successfully'
             ], 201);
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Database error creating item brand', [
+                'error' => $e->getMessage(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'message' => 'Failed to create item brand due to database error',
+                'error' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         } catch (\Exception $e) {
+            Log::error('Unexpected error creating item brand', [
+                'error' => $e->getMessage(),
+                'request' => $request->all()
+            ]);
             return response()->json([
                 'message' => 'Failed to create item brand',
                 'error' => $e->getMessage()
@@ -90,18 +128,30 @@ class BrandController extends Controller
      */
     public function show($id)
     {
-        $brand = DB::table('item_brands')->where('id', $id)->first();
+        try {
+            $brand = DB::table('item_brands')->where('id', $id)->first();
 
-        if (!$brand) {
+            if (!$brand) {
+                Log::warning('Item brand not found', ['id' => $id]);
+                return response()->json([
+                    'message' => 'Item brand not found'
+                ], 404);
+            }
+
             return response()->json([
-                'message' => 'Item brand not found'
-            ], 404);
+                'data' => $brand,
+                'message' => 'success'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve item brand', [
+                'id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to retrieve item brand',
+                'error' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-
-        return response()->json([
-            'data' => $brand,
-            'message' => 'success'
-        ], 200);
     }
 
     /**
@@ -109,28 +159,34 @@ class BrandController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $brand = DB::table('item_brands')->where('id', $id)->first();
-
-        if (!$brand) {
-            return response()->json([
-                'message' => 'Item brand not found'
-            ], 404);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:item_brands,name,' . $id,
-            'description' => 'nullable|string',
-            'is_active' => 'boolean',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
+            $brand = DB::table('item_brands')->where('id', $id)->first();
+
+            if (!$brand) {
+                Log::warning('Item brand not found', ['id' => $id]);
+                return response()->json([
+                    'message' => 'Item brand not found'
+                ], 404);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255|unique:item_brands,name,' . $id,
+                'description' => 'nullable|string',
+                'is_active' => 'boolean',
+            ]);
+
+            if ($validator->fails()) {
+                Log::error('Validation failed for item brand update', [
+                    'id' => $id,
+                    'errors' => $validator->errors(),
+                    'request' => $request->all()
+                ]);
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
             $now = now()->toDateTimeString();
             DB::table('item_brands')->where('id', $id)->update([
                 'name' => $request->input('name', $brand->name),
@@ -142,12 +198,28 @@ class BrandController extends Controller
             ]);
 
             $updatedBrand = DB::table('item_brands')->where('id', $id)->first();
+            Log::info('Item brand updated successfully', ['brand' => $updatedBrand]);
 
             return response()->json([
                 'data' => $updatedBrand,
                 'message' => 'Item brand updated successfully'
             ], 200);
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Database error updating item brand', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'message' => 'Failed to update item brand due to database error',
+                'error' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         } catch (\Exception $e) {
+            Log::error('Unexpected error updating item brand', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'request' => $request->all()
+            ]);
             return response()->json([
                 'message' => 'Failed to update item brand',
                 'error' => $e->getMessage()
@@ -160,23 +232,39 @@ class BrandController extends Controller
      */
     public function destroy($id)
     {
-        $brand = DB::table('item_brands')->where('id', $id)->first();
-
-        if (!$brand) {
-            return response()->json([
-                'message' => 'Item brand not found'
-            ], 404);
-        }
-
         try {
+            $brand = DB::table('item_brands')->where('id', $id)->first();
+
+            if (!$brand) {
+                Log::warning('Item brand not found', ['id' => $id]);
+                return response()->json([
+                    'message' => 'Item brand not found'
+                ], 404);
+            }
+
             DB::table('item_brands')->where('id', $id)->delete();
+            Log::info('Item brand deleted successfully', ['id' => $id]);
+
             return response()->json([
                 'message' => 'Item brand deleted successfully'
             ], 200);
         } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Database error deleting item brand', [
+                'id' => $id,
+                'error' => $e->getMessage()
+            ]);
             return response()->json([
                 'message' => 'Cannot delete item brand due to existing references'
             ], 422);
+        } catch (\Exception $e) {
+            Log::error('Unexpected error deleting item brand', [
+                'id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Failed to delete item brand',
+                'error' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 }

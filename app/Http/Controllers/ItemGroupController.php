@@ -5,74 +5,291 @@ namespace App\Http\Controllers;
 use App\Models\ItemGroup;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class ItemGroupController extends Controller
 {
-    public function index()
+    /**
+     * Display a listing of all item groups.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function index(Request $request)
     {
-        return response()->json([
-            'data' => ItemGroup::all(),
-            'message' => 'Success'
-        ], 200);
+        try {
+            $perPage = $request->input('per_page', 10);
+            $page = $request->input('page', 1);
+            $search = $request->input('search');
+
+            $query = ItemGroup::with('store');
+
+            if ($search) {
+                $query->where('name', 'like', '%' . $search . '%');
+            }
+
+            $itemGroups = $query->paginate($perPage);
+
+            Log::info('Fetched item groups', [
+                'query' => $query->toSql(),
+                'bindings' => $query->getBindings(),
+                'count' => $itemGroups->total(),
+                'page' => $page,
+                'per_page' => $perPage
+            ]);
+
+            return response()->json([
+                'data' => $itemGroups->items(),
+                'current_page' => $itemGroups->currentPage(),
+                'per_page' => $itemGroups->perPage(),
+                'total' => $itemGroups->total(),
+                'last_page' => $itemGroups->lastPage(),
+                'message' => 'Item groups retrieved successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve item groups', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to retrieve item groups',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
+
+    /**
+     * Check if an item group name exists for a specific store.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function checkName(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'store_id' => 'required|integer|exists:stores,id'
-        ]);
+        try {
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'store_id' => 'required|integer|exists:stores,id'
+            ]);
 
-        if ($validator->fails()) {
+            if ($validator->fails()) {
+                Log::error('Validation failed for checkName', [
+                    'errors' => $validator->errors(),
+                    'request' => $request->all()
+                ]);
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $exists = ItemGroup::where('name', $request->name)
+                              ->where('store_id', $request->store_id)
+                              ->exists();
+
+            Log::info('checkName successful', [
+                'name' => $request->name,
+                'store_id' => $request->store_id,
+                'exists' => $exists
+            ]);
+
             return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
+                'exists' => $exists,
+                'message' => $exists ? 'Name already exists for this store' : 'Name is available'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error in checkName', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'error' => 'Internal Server Error',
+                'message' => $e->getMessage()
+            ], 500);
         }
-
-        $exists = ItemGroup::where('name', $request->name)
-                          ->where('store_id', $request->store_id)
-                          ->exists();
-        return response()->json([
-            'exists' => $exists,
-            'message' => $exists ? 'Name already exists for this store' : 'Name is available'
-        ], 200);
     }
 
+    /**
+     * Store a newly created item group in storage.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'store_id' => 'required|integer|exists:stores,id',
-            'created_at' => 'sometimes|date',
-            'updated_at' => 'sometimes|date'
-        ]);
+        try {
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'store_id' => 'required|integer|exists:stores,id',
+                'created_at' => 'sometimes|date',
+                'updated_at' => 'sometimes|date'
+            ]);
 
-        if ($validator->fails()) {
+            if ($validator->fails()) {
+                Log::error('Validation failed for store item group', [
+                    'errors' => $validator->errors(),
+                    'request' => $request->all()
+                ]);
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Ensure name is unique for the store
+            if (ItemGroup::where('name', $request->name)->where('store_id', $request->store_id)->exists()) {
+                Log::warning('Duplicate item group name for store', [
+                    'name' => $request->name,
+                    'store_id' => $request->store_id
+                ]);
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => ['name' => ['The name has already been taken for this store.']]
+                ], 422);
+            }
+
+            $itemGroup = ItemGroup::create([
+                'name' => $request->name,
+                'store_id' => $request->store_id,
+                'created_at' => $request->created_at ?? now(),
+                'updated_at' => $request->updated_at ?? now()
+            ]);
+
+            Log::info('Item group created successfully', [
+                'id' => $itemGroup->id,
+                'name' => $itemGroup->name,
+                'store_id' => $itemGroup->store_id
+            ]);
+
             return response()->json([
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Ensure name is unique for the store
-        if (ItemGroup::where('name', $request->name)->where('store_id', $request->store_id)->exists()) {
+                'data' => $itemGroup,
+                'message' => 'Item group created successfully'
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Error creating item group: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Validation failed',
-                'errors' => ['name' => ['The name has already been taken for this store.']]
-            ], 422);
+                'message' => 'Error creating item group',
+                'error' => $e->getMessage()
+            ], 500);
         }
+    }
 
-        $itemGroup = ItemGroup::create([
-            'name' => $request->name,
-            'store_id' => $request->store_id,
-            'created_at' => $request->created_at ?? now(),
-            'updated_at' => $request->updated_at ?? now()
-        ]);
+    /**
+     * Update the specified item group.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function update(Request $request, $id)
+    {
+        try {
+            $itemGroup = ItemGroup::find($id);
 
-        return response()->json([
-            'data' => $itemGroup,
-            'message' => 'Item group created successfully'
-        ], 201);
+            if (!$itemGroup) {
+                Log::warning('Item group not found for update', ['id' => $id]);
+                return response()->json([
+                    'message' => 'Item group not found'
+                ], 404);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'store_id' => 'required|integer|exists:stores,id',
+                'updated_at' => 'sometimes|date'
+            ]);
+
+            if ($validator->fails()) {
+                Log::error('Validation failed for update item group', [
+                    'id' => $id,
+                    'errors' => $validator->errors(),
+                    'request' => $request->all()
+                ]);
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Ensure name is unique for the store, excluding the current item group
+            if (ItemGroup::where('name', $request->name)
+                         ->where('store_id', $request->store_id)
+                         ->where('id', '!=', $id)
+                         ->exists()) {
+                Log::warning('Duplicate item group name for store during update', [
+                    'id' => $id,
+                    'name' => $request->name,
+                    'store_id' => $request->store_id
+                ]);
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => ['name' => ['The name has already been taken for this store.']]
+                ], 422);
+            }
+
+            $itemGroup->update([
+                'name' => $request->name,
+                'store_id' => $request->store_id,
+                'updated_at' => $request->updated_at ?? now()
+            ]);
+
+            Log::info('Item group updated successfully', [
+                'id' => $itemGroup->id,
+                'name' => $itemGroup->name,
+                'store_id' => $itemGroup->store_id
+            ]);
+
+            return response()->json([
+                'data' => $itemGroup,
+                'message' => 'Item group updated successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error updating item group: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Error updating item group',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove the specified item group (soft delete).
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function destroy($id)
+    {
+        try {
+            $itemGroup = ItemGroup::find($id);
+
+            if (!$itemGroup) {
+                Log::warning('Item group not found for deletion', ['id' => $id]);
+                return response()->json([
+                    'message' => 'Item group not found'
+                ], 404);
+            }
+
+            $itemGroup->delete();
+
+            Log::info('Item group deleted successfully', [
+                'id' => $id,
+                'name' => $itemGroup->name,
+                'store_id' => $itemGroup->store_id
+            ]);
+
+            return response()->json([
+                'message' => 'Item group deleted successfully'
+            ], 200);
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Error deleting item group due to references: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Cannot delete item group due to existing references'
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error deleting item group: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Error deleting item group',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

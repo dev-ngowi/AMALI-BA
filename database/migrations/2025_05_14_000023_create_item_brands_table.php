@@ -18,6 +18,8 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->timestamp('created_at')->nullable();
             $table->timestamp('updated_at')->nullable();
+            $table->timestamp('last_modified')->nullable();
+            $table->boolean('synced')->default(false);
             $table->index('name');
         });
     }

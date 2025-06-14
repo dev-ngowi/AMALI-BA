@@ -5,23 +5,46 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class CustomerController extends Controller
 {
     /**
-     * Display a listing of the customers.
+     * Display a listing of the customers with pagination.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function index()
+    public function index(Request $request)
     {
-        $customers = Customer::with(['customerType', 'city'])->get();
-        return response()->json([
-            'data' => $customers,
-            'message' => 'success'
-        ], 200);
+        try {
+            $perPage = $request->input('per_page', 10); // Number of items per page, default to 10
+            $page = $request->input('page', 1); // Current page, default to 1
+
+            // Fetch customers with pagination, including customerType and city relationships
+            $customers = Customer::with(['customerType', 'city'])->paginate($perPage);
+            return response()->json([
+                'data' => $customers->items(),
+                'current_page' => $customers->currentPage(),
+                'per_page' => $customers->perPage(),
+                'total' => $customers->total(),
+                'last_page' => $customers->lastPage(),
+                'message' => 'success'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error fetching customers: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Error fetching customers',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Display the specified customer.
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
      */
     public function show($id)
     {
@@ -40,6 +63,9 @@ class CustomerController extends Controller
 
     /**
      * Store a newly created customer in storage.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
      */
     public function store(Request $request)
     {
@@ -78,6 +104,10 @@ class CustomerController extends Controller
 
     /**
      * Update the specified customer in storage.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
      */
     public function update(Request $request, $id)
     {
@@ -123,6 +153,9 @@ class CustomerController extends Controller
 
     /**
      * Remove the specified customer from storage.
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
      */
     public function destroy($id)
     {

@@ -55,7 +55,7 @@ class UserController extends Controller
             'username' => 'required|string|max:255|unique:users,username',
             'email' => 'nullable|email|max:255|unique:users,email',
             'phone' => 'nullable|string|max:255',
-            'password' => 'required|string|min:6', // Changed to required
+            'password' => 'required|string|min:6',
             'pin' => 'nullable|integer|digits:4',
         ]);
 
@@ -68,7 +68,6 @@ class UserController extends Controller
         }
 
         try {
-            // Check if user exists by username, email, or phone
             $existingUserQuery = User::query();
             if ($request->username) {
                 $existingUserQuery->where('username', $request->username);
@@ -144,15 +143,20 @@ class UserController extends Controller
 
     public function login(Request $request)
     {
+        Log::info('Login endpoint hit', ['request' => $request->all()]);
+
         Log::info('Received POST /login request', [
             'input' => $request->all(),
-            'raw_username' => $request->username,
-            'username_length' => strlen($request->username)
+            'login_method' => $request->login_method,
+            'email' => $request->email,
+            'pin' => $request->pin ? '****' : null,
         ]);
 
         $validator = Validator::make($request->all(), [
-            'username' => 'required|string',
-            'password' => 'required|string',
+            'login_method' => 'required|in:email,pin',
+            'email' => 'required_if:login_method,email|email',
+            'password' => 'required_if:login_method,email|string',
+            'pin' => 'required_if:login_method,pin|digits:4',
         ]);
 
         if ($validator->fails()) {
@@ -164,30 +168,51 @@ class UserController extends Controller
         }
 
         try {
-            $user = User::where('username', $request->username)->first();
+            $user = null;
 
-            Log::info('User lookup', [
-                'input_username' => $request->username,
-                'user_found' => $user ? true : false,
-                'db_username' => $user ? $user->username : null,
-                'password_hash' => $user ? $user->password : null,
-                'password_match' => $user ? Hash::check($request->password, $user->password) : false
-            ]);
+            if ($request->login_method === 'email') {
+                $user = User::where('email', $request->email)->first();
 
-            if (!$user || !Hash::check($request->password, $user->password)) {
-                Log::warning('Invalid login attempt', [
-                    'username' => $request->username,
-                    'user_exists' => $user ? true : false,
+                Log::info('Email login attempt', [
+                    'input_email' => $request->email,
+                    'user_found' => $user ? true : false,
+                    'db_email' => $user ? $user->email : null,
                     'password_match' => $user ? Hash::check($request->password, $user->password) : false
                 ]);
-                return response()->json([
-                    'message' => 'Invalid username or password'
-                ], 401);
+
+                if (!$user || !Hash::check($request->password, $user->password)) {
+                    Log::warning('Invalid email login attempt', [
+                        'email' => $request->email,
+                        'user_exists' => $user ? true : false,
+                        'password_match' => $user ? Hash::check($request->password, $user->password) : false
+                    ]);
+                    return response()->json([
+                        'message' => 'Invalid email or password'
+                    ], 401);
+                }
+            } elseif ($request->login_method === 'pin') {
+                $user = User::where('pin', $request->pin)->first();
+
+                Log::info('PIN login attempt', [
+                    'pin' => '****',
+                    'user_found' => $user ? true : false,
+                    'db_pin' => $user ? '****' : null
+                ]);
+
+                if (!$user) {
+                    Log::warning('Invalid PIN login attempt', [
+                        'pin' => '****',
+                        'user_exists' => $user ? true : false
+                    ]);
+                    return response()->json([
+                        'message' => 'Invalid PIN'
+                    ], 401);
+                }
             }
 
             $token = $user->createToken('auth_token')->plainTextToken;
 
-            Log::info('User logged in successfully', ['user_id' => $user->id]);
+            Log::info('User logged in successfully', ['user_id' => $user->id, 'login_method' => $request->login_method]);
 
             return response()->json([
                 'data' => [

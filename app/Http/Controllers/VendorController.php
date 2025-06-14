@@ -14,12 +14,21 @@ class VendorController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function index()
+    public function index(Request $request)
     {
         try {
-            $data = Vendor::all();
+            $perPage = $request->input('per_page', 10); // Number of items per page, default to 10
+            $page = $request->input('page', 1); // Current page, default to 1
+
+            // Fetch vendors with pagination, including city and country relationships
+            $data = Vendor::with(['city', 'country'])->paginate($perPage);
+
             return response()->json([
-                'data' => $data,
+                'data' => $data->items(), // Current page's data
+                'current_page' => $data->currentPage(),
+                'per_page' => $data->perPage(),
+                'total' => $data->total(),
+                'last_page' => $data->lastPage(),
                 'message' => 'Success'
             ], 200);
         } catch (\Exception $e) {

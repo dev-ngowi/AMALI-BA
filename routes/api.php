@@ -33,30 +33,46 @@ Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
 
 
 // User Routes
+// User Routes
 Route::get('/users', [UserController::class, 'index']);
 Route::post('/users', [UserController::class, 'store']);
 Route::post('/login', [UserController::class, 'login']);
 
+
+
 // ITEM GROUP 
-Route::get('/item_groups', [ItemGroupController::class, 'index']);
-Route::post('/item_groups', [ItemGroupController::class, 'store']);
-Route::get('/item_groups/check-name', [ItemGroupController::class, 'checkName']);
+Route::get('/item-groups', [ItemGroupController::class, 'index']);
+Route::post('/item-groups', [ItemGroupController::class, 'store']);
+Route::get('/item-groups/check-name', [ItemGroupController::class, 'checkName']);
+Route::put('/item-groups/{id}', [ItemGroupController::class, 'update']);
+Route::delete('/item-groups/{id}', [ItemGroupController::class, 'destroy']);
 
 // CATEGORY
 Route::get('/categories', [CategoryController::class, 'index']);
 Route::post('/categories', [CategoryController::class, 'store']);
+Route::get('/categories/{id}', [CategoryController::class, 'show']);
+Route::put('/categories/{id}', [CategoryController::class, 'update']);
+Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
 
 // STORE
 Route::get('/stores', [StoreController::class, 'index']);
 Route::post('/stores', [StoreController::class, 'store']);
+Route::get('/stores/{id}', [StoreController::class, 'show']);
+Route::put('/stores/{id}', [StoreController::class, 'update']);
+Route::delete('/stores/{id}', [StoreController::class, 'destroy']);
+Route::get('/stores/users', [StoreController::class, 'users']);
 
 // COUNTRY
 Route::get('/countries', [CountriesController::class, 'index']);
 Route::post('/countries', [CountriesController::class, 'store']);
+Route::delete('/countries/{id}', [CountriesController::class, 'destroy']);
+
 
 // CITY
 Route::get('/cities', [CityController::class, 'index']);
 Route::post('/cities', [CityController::class, 'store']);
+Route::put('/cities/{id}', [CityController::class, 'update']);
+Route::delete('/cities/{id}', [CityController::class, 'destroy']);
 
 // VENDOR
 Route::get('/vendors', [VendorController::class, 'index']);
@@ -160,6 +176,7 @@ Route::delete('/taxes/{id}', [TaxController::class, 'destroy']);
 Route::get('/items', [ItemController::class, 'index']);
 Route::get('/items/{id}', [ItemController::class, 'show']);
 Route::post('/items', [ItemController::class, 'store']);
+Route::post('items/batch', [ItemController::class, 'storeBatch']);
 Route::put('/items/{id}', [ItemController::class, 'update']);
 Route::delete('/items/{id}', [ItemController::class, 'destroy']);
 
