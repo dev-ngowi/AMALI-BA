@@ -8,6 +8,7 @@ use App\Models\OrderPayment;
 use App\Models\CustomerOrder;
 use App\Models\ItemStock;
 use App\Models\Stock;
+use App\Models\Payment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -16,148 +17,155 @@ use Illuminate\Support\Facades\Log;
 
 class OrderController extends Controller
 {
-    /**
-     * Store a new order.
-     */
-    public function store(Request $request)
+    
+     public function storeBatch(Request $request)
     {
         try {
-            $validator = Validator::make($request->all(), [
-                'order_data' => 'required|array',
-                'order_data.order_number' => 'required|string|unique:orders,order_number',
-                'order_data.receipt_number' => 'required|string|unique:orders,receipt_number',
-                'order_data.date' => 'required|date',
-                'order_data.customer_type_id' => 'nullable|exists:customer_types,id',
-                'order_data.store_id' => 'required|exists:stores,id',
-                'order_data.total_amount' => 'required|numeric|min:0',
-                'order_data.tip' => 'nullable|numeric|min:0',
-                'order_data.discount' => 'nullable|numeric|min:0',
-                'order_data.ground_total' => 'required|numeric|min:0',
-                'items' => 'required|array|min:1',
-                'items.*.item_id' => 'required|exists:items,id',
-                'items.*.quantity' => 'required|integer|min:1',
-                'items.*.price' => 'required|numeric|min:0',
-                'payment_id' => 'required|exists:payments,id',
-                'customer_id' => 'nullable|exists:customers,id'
-            ]);
-
-            if ($validator->fails()) {
-                Log::warning('Validation failed for order creation', [
-                    'errors' => $validator->errors()->toArray(),
-                    'request' => $request->all()
-                ]);
+            $payloads = $request->all();
+            if (!is_array($payloads)) {
                 return response()->json([
-                    'message' => 'Validation failed',
-                    'errors' => $validator->errors()->toArray()
+                    'message' => 'Invalid payload format, expected array of orders'
                 ], 422);
             }
 
-            // Validate stock availability
-            foreach ($request->items as $item) {
-                $stock = ItemStock::whereIn('stock_id', function ($query) use ($item, $request) {
-                    $query->select('id')
-                        ->from('stocks')
-                        ->where('item_id', $item['item_id'])
-                        ->where('store_id', $request->order_data['store_id']);
-                })->first();
+            $orders = [];
+            DB::beginTransaction();
 
-                if (!$stock || $stock->stock_quantity < $item['quantity']) {
-                    Log::warning("Insufficient stock for item ID {$item['item_id']}", [
-                        'item_id' => $item['item_id'],
-                        'store_id' => $request->order_data['store_id'],
-                        'requested_quantity' => $item['quantity'],
-                        'available_quantity' => $stock ? $stock->stock_quantity : 0
-                    ]);
+            foreach ($payloads as $index => $payload) {
+                $validator = Validator::make($payload, [
+                    'order_data.order_number' => 'required|string|max:255|unique:orders,order_number',
+                    'order_data.receipt_number' => 'required|string|max:255',
+                    'order_data.date' => 'required|date',
+                    'order_data.customer_type_id' => 'nullable|exists:customer_types,id',
+                    'order_data.store_id' => 'required|exists:stores,id',
+                    'order_data.total_amount' => 'required|numeric|min:0',
+                    'order_data.tip' => 'nullable|numeric|min:0',
+                    'order_data.discount' => 'nullable|numeric|min:0',
+                    'order_data.ground_total' => 'required|numeric|min:0',
+                    'items' => 'required|array|min:1',
+                    'items.*.item_id' => 'required|exists:items,id',
+                    'items.*.quantity' => 'required|integer|min:1',
+                    'items.*.price' => 'required|numeric|min:0',
+                    'payment_id' => 'required|exists:payments,id',
+                    'customer_id' => 'nullable|exists:customers,id'
+                ]);
+
+                if ($validator->fails()) {
+                    Log::warning("Order validation failed at index {$index}", ['errors' => $validator->errors()]);
+                    DB::rollBack();
                     return response()->json([
-                        'message' => "Insufficient stock for item ID {$item['item_id']}",
-                        'details' => [
-                            'item_id' => $item['item_id'],
-                            'store_id' => $request->order_data['store_id'],
-                            'requested_quantity' => $item['quantity'],
-                            'available_quantity' => $stock ? $stock->stock_quantity : 0
-                        ]
+                        'message' => "Validation failed for order at index {$index}",
+                        'errors' => $validator->errors()
                     ], 422);
                 }
-            }
 
-            return DB::transaction(function () use ($request) {
-                $now = Carbon::now();
-
-                // Create order
+                $orderData = $payload['order_data'];
                 $order = Order::create([
-                    'order_number' => $request->order_data['order_number'],
-                    'receipt_number' => $request->order_data['receipt_number'],
-                    'date' => $request->order_data['date'],
-                    'customer_type_id' => $request->order_data['customer_type_id'],
-                    'store_id' => $request->order_data['store_id'],
-                    'total_amount' => $request->order_data['total_amount'],
-                    'tip' => $request->order_data['tip'] ?? 0,
-                    'discount' => $request->order_data['discount'] ?? 0,
-                    'ground_total' => $request->order_data['ground_total'],
+                    'order_number' => $orderData['order_number'],
+                    'receipt_number' => $orderData['receipt_number'],
+                    'date' => $orderData['date'],
+                    'customer_type_id' => $orderData['customer_type_id'],
+                    'store_id' => $orderData['store_id'],
+                    'total_amount' => $orderData['total_amount'],
+                    'tip' => $orderData['tip'] ?? 0,
+                    'discount' => $orderData['discount'] ?? 0,
+                    'ground_total' => $orderData['ground_total'],
                     'is_active' => true,
                     'status' => 'completed',
                     'version' => 1,
-                    'last_modified' => $now,
-                    'is_synced' => false,
-                    'operation' => 'create'
+                    'last_modified' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now()
                 ]);
 
-                // Create order items and update stock
-                foreach ($request->items as $item) {
+                foreach ($payload['items'] as $item) {
                     OrderItem::create([
                         'order_id' => $order->id,
                         'item_id' => $item['item_id'],
                         'quantity' => $item['quantity'],
-                        'price' => $item['price'],
-                        'created_at' => $now,
-                        'updated_at' => $now
+                        'price' => $item['price']
                     ]);
 
-                    // Update stock
-                    $updated = ItemStock::whereIn('stock_id', function ($query) use ($item, $request) {
-                        $query->select('id')
-                            ->from('stocks')
+                    $stock = Stock::where('store_id', $orderData['store_id'])->first();
+                    if ($stock) {
+                        $itemStock = ItemStock::where('stock_id', $stock->id)
                             ->where('item_id', $item['item_id'])
-                            ->where('store_id', $request->order_data['store_id']);
-                    })->decrement('stock_quantity', $item['quantity'], [
-                        'updated_at' => $now
-                    ]);
-
-                    if ($updated === 0) {
-                        Log::error("Failed to update stock for item ID {$item['item_id']}", [
-                            'item_id' => $item['item_id'],
-                            'store_id' => $request->order_data['store_id'],
-                            'quantity' => $item['quantity']
-                        ]);
-                        throw new \Exception("Failed to update stock for item ID {$item['item_id']}");
+                            ->first();
+                        if ($itemStock) {
+                            $itemStock->update([
+                                'quantity' => $itemStock->quantity - $item['quantity']
+                            ]);
+                        }
                     }
                 }
 
-                // Create order payment
                 OrderPayment::create([
                     'order_id' => $order->id,
-                    'payment_id' => $request->payment_id,
-                    'created_at' => $now,
-                    'updated_at' => $now
+                    'payment_id' => $payload['payment_id']
                 ]);
 
-                // Create customer order if customer_id is provided
-                if ($request->customer_id) {
+                if ($payload['customer_id']) {
                     CustomerOrder::create([
-                        'customer_id' => $request->customer_id,
-                        'order_id' => $order->id
+                        'order_id' => $order->id,
+                        'customer_id' => $payload['customer_id']
                     ]);
                 }
 
-                Log::info('Order created successfully', ['order_id' => $order->id, 'order_number' => $order->order_number]);
-                return response()->json([
-                    'data' => ['order_id' => $order->id],
-                    'message' => 'Order created successfully'
-                ], 201);
-            }, 5);
+                $orders[] = [
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'receipt_number' => $order->receipt_number
+                ];
+            }
+
+            DB::commit();
+            Log::info('Batch orders created successfully', ['count' => count($orders)]);
+            return response()->json([
+                'data' => $orders,
+                'message' => 'Batch orders created successfully'
+            ], 201);
         } catch (\Exception $e) {
-            Log::error('Failed to create order: ' . $e->getMessage(), [
+            DB::rollBack();
+            Log::error('Failed to create batch orders', [
+                'error' => $e->getMessage(),
                 'request' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Internal server error',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get a paginated list of payments.
+     */
+    public function getPayments(Request $request)
+    {
+        try {
+            $perPage = $request->query('per_page', 10);
+            $query = Payment::query()->orderBy('created_at', 'desc');
+
+            if ($request->query('payment_type_id')) {
+                $query->where('payment_type_id', $request->query('payment_type_id'));
+            }
+
+            $payments = $query->with('paymentType')->paginate($perPage);
+
+            return response()->json([
+                'data' => $payments->items(),
+                'pagination' => [
+                    'current_page' => $payments->currentPage(),
+                    'last_page' => $payments->lastPage(),
+                    'per_page' => $payments->perPage(),
+                    'total' => $payments->total(),
+                ],
+                'message' => 'Payments retrieved successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve payments: ' . $e->getMessage(), [
+                'error' => $e->all(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
@@ -175,24 +183,31 @@ class OrderController extends Controller
     }
 
     /**
-     * Get a paginated list of orders or a specific order by order_number/receipt_number.
+     * Get a paginated list of orders.
      */
-    public function get(Request $request)
+    public function getOrders(Request $request)
     {
         try {
             $perPage = $request->query('per_page', 10);
-            $query = Order::with(['orderItems.item', 'orderPayments.payment', 'customerOrder.customer'])
-                ->orderBy('date', 'desc');
+            $query = Order::query()->orderBy('date', 'desc');
 
-            // Support filtering by order_number or receipt_number
+            // Apply filters if provided
             if ($request->query('order_number')) {
                 $query->where('order_number', $request->query('order_number'));
             }
             if ($request->query('receipt_number')) {
                 $query->where('receipt_number', $request->query('receipt_number'));
             }
+            if ($request->query('store_id')) {
+                $query->where('store_id', $request->query('store_id'));
+            }
+            if ($request->query('date')) {
+                $query->where('date', $request->query('date'));
+            }
 
-            $orders = $query->paginate($perPage);
+            // Use correct relationship names
+            $orders = $query->with(['customerType', 'store', 'orderItems', 'orderPayments', 'customerOrders'])
+                ->paginate($perPage);
 
             return response()->json([
                 'data' => $orders->items(),
@@ -206,7 +221,7 @@ class OrderController extends Controller
             ], 200);
         } catch (\Exception $e) {
             Log::error('Failed to retrieve orders: ' . $e->getMessage(), [
-                'request' => $request->all(),
+                'error' => $e->all(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
@@ -369,9 +384,9 @@ class OrderController extends Controller
                     // Update stock
                     $updated = ItemStock::whereIn('stock_id', function ($query) use ($item, $request) {
                         $query->select('id')
-                            ->from('stocks')
-                            ->where('item_id', $item['item_id'])
-                            ->where('store_id', $request->order_data['store_id']);
+                        ->from('stocks')
+                        ->where('item_id', $item['item_id'])
+                        ->where('store_id', $request->order_data['store_id']);
                     })->decrement('stock_quantity', $item['quantity'], [
                         'updated_at' => $now
                     ]);

@@ -21,7 +21,7 @@ class ItemGroupController extends Controller
             $page = $request->input('page', 1);
             $search = $request->input('search');
 
-            $query = ItemGroup::with('store');
+            $query = ItemGroup::with('store')->whereNull('deleted_at');
 
             if ($search) {
                 $query->where('name', 'like', '%' . $search . '%');
@@ -34,7 +34,8 @@ class ItemGroupController extends Controller
                 'bindings' => $query->getBindings(),
                 'count' => $itemGroups->total(),
                 'page' => $page,
-                'per_page' => $perPage
+                'per_page' => $perPage,
+                'request' => $request->all()
             ]);
 
             return response()->json([
@@ -46,14 +47,17 @@ class ItemGroupController extends Controller
                 'message' => 'Item groups retrieved successfully'
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Failed to retrieve item groups', ['error' => $e->getMessage()]);
+            Log::error('Failed to retrieve item groups', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
             return response()->json([
                 'message' => 'Failed to retrieve item groups',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
-
 
     /**
      * Check if an item group name exists for a specific store.
@@ -70,8 +74,8 @@ class ItemGroupController extends Controller
             ]);
 
             if ($validator->fails()) {
-                Log::error('Validation failed for checkName', [
-                    'errors' => $validator->errors(),
+                Log::warning('Validation failed for checkName', [
+                    'errors' => $validator->errors()->toArray(),
                     'request' => $request->all()
                 ]);
                 return response()->json([
@@ -82,12 +86,14 @@ class ItemGroupController extends Controller
 
             $exists = ItemGroup::where('name', $request->name)
                               ->where('store_id', $request->store_id)
+                              ->whereNull('deleted_at')
                               ->exists();
 
             Log::info('checkName successful', [
                 'name' => $request->name,
                 'store_id' => $request->store_id,
-                'exists' => $exists
+                'exists' => $exists,
+                'request' => $request->all()
             ]);
 
             return response()->json([
@@ -124,8 +130,8 @@ class ItemGroupController extends Controller
             ]);
 
             if ($validator->fails()) {
-                Log::error('Validation failed for store item group', [
-                    'errors' => $validator->errors(),
+                Log::warning('Validation failed for store item group', [
+                    'errors' => $validator->errors()->toArray(),
                     'request' => $request->all()
                 ]);
                 return response()->json([
@@ -135,10 +141,14 @@ class ItemGroupController extends Controller
             }
 
             // Ensure name is unique for the store
-            if (ItemGroup::where('name', $request->name)->where('store_id', $request->store_id)->exists()) {
+            if (ItemGroup::where('name', $request->name)
+                         ->where('store_id', $request->store_id)
+                         ->whereNull('deleted_at')
+                         ->exists()) {
                 Log::warning('Duplicate item group name for store', [
                     'name' => $request->name,
-                    'store_id' => $request->store_id
+                    'store_id' => $request->store_id,
+                    'request' => $request->all()
                 ]);
                 return response()->json([
                     'message' => 'Validation failed',
@@ -156,7 +166,8 @@ class ItemGroupController extends Controller
             Log::info('Item group created successfully', [
                 'id' => $itemGroup->id,
                 'name' => $itemGroup->name,
-                'store_id' => $itemGroup->store_id
+                'store_id' => $itemGroup->store_id,
+                'request' => $request->all()
             ]);
 
             return response()->json([
@@ -164,7 +175,11 @@ class ItemGroupController extends Controller
                 'message' => 'Item group created successfully'
             ], 201);
         } catch (\Exception $e) {
-            Log::error('Error creating item group: ' . $e->getMessage());
+            Log::error('Error creating item group', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
             return response()->json([
                 'message' => 'Error creating item group',
                 'error' => $e->getMessage()
@@ -182,10 +197,13 @@ class ItemGroupController extends Controller
     public function update(Request $request, $id)
     {
         try {
-            $itemGroup = ItemGroup::find($id);
+            $itemGroup = ItemGroup::whereNull('deleted_at')->find($id);
 
             if (!$itemGroup) {
-                Log::warning('Item group not found for update', ['id' => $id]);
+                Log::warning('Item group not found for update', [
+                    'id' => $id,
+                    'request' => $request->all()
+                ]);
                 return response()->json([
                     'message' => 'Item group not found'
                 ], 404);
@@ -198,9 +216,9 @@ class ItemGroupController extends Controller
             ]);
 
             if ($validator->fails()) {
-                Log::error('Validation failed for update item group', [
+                Log::warning('Validation failed for update item group', [
                     'id' => $id,
-                    'errors' => $validator->errors(),
+                    'errors' => $validator->errors()->toArray(),
                     'request' => $request->all()
                 ]);
                 return response()->json([
@@ -213,11 +231,13 @@ class ItemGroupController extends Controller
             if (ItemGroup::where('name', $request->name)
                          ->where('store_id', $request->store_id)
                          ->where('id', '!=', $id)
+                         ->whereNull('deleted_at')
                          ->exists()) {
                 Log::warning('Duplicate item group name for store during update', [
                     'id' => $id,
                     'name' => $request->name,
-                    'store_id' => $request->store_id
+                    'store_id' => $request->store_id,
+                    'request' => $request->all()
                 ]);
                 return response()->json([
                     'message' => 'Validation failed',
@@ -234,7 +254,8 @@ class ItemGroupController extends Controller
             Log::info('Item group updated successfully', [
                 'id' => $itemGroup->id,
                 'name' => $itemGroup->name,
-                'store_id' => $itemGroup->store_id
+                'store_id' => $itemGroup->store_id,
+                'request' => $request->all()
             ]);
 
             return response()->json([
@@ -242,7 +263,11 @@ class ItemGroupController extends Controller
                 'message' => 'Item group updated successfully'
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Error updating item group: ' . $e->getMessage());
+            Log::error('Error updating item group', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
             return response()->json([
                 'message' => 'Error updating item group',
                 'error' => $e->getMessage()
@@ -259,10 +284,12 @@ class ItemGroupController extends Controller
     public function destroy($id)
     {
         try {
-            $itemGroup = ItemGroup::find($id);
+            $itemGroup = ItemGroup::whereNull('deleted_at')->find($id);
 
             if (!$itemGroup) {
-                Log::warning('Item group not found for deletion', ['id' => $id]);
+                Log::warning('Item group not found for deletion', [
+                    'id' => $id
+                ]);
                 return response()->json([
                     'message' => 'Item group not found'
                 ], 404);
@@ -270,7 +297,7 @@ class ItemGroupController extends Controller
 
             $itemGroup->delete();
 
-            Log::info('Item group deleted successfully', [
+            Log::info('Item group soft deleted successfully', [
                 'id' => $id,
                 'name' => $itemGroup->name,
                 'store_id' => $itemGroup->store_id
@@ -280,12 +307,20 @@ class ItemGroupController extends Controller
                 'message' => 'Item group deleted successfully'
             ], 200);
         } catch (\Illuminate\Database\QueryException $e) {
-            Log::error('Error deleting item group due to references: ' . $e->getMessage());
+            Log::error('Error deleting item group due to references', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'id' => $id
+            ]);
             return response()->json([
                 'message' => 'Cannot delete item group due to existing references'
             ], 422);
         } catch (\Exception $e) {
-            Log::error('Error deleting item group: ' . $e->getMessage());
+            Log::error('Error deleting item group', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'id' => $id
+            ]);
             return response()->json([
                 'message' => 'Error deleting item group',
                 'error' => $e->getMessage()

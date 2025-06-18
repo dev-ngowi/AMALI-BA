@@ -189,7 +189,8 @@ Route::delete('/item_types/{id}', [ItemTypeController::class, 'destroy']);
 
 // ORDER
 Route::post('/orders', [OrderController::class, 'store']);
-Route::get('/orders', [OrderController::class, 'get']);
+Route::get('/orders', [OrderController::class, 'getOrders']);
+Route::post('/orders/batch', [OrderController::class, 'storeBatch']);
 Route::get('/orders/{id}', [OrderController::class, 'show']);
 Route::put('/orders/{id}', [OrderController::class, 'update']);
 
