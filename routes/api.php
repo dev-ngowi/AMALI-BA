@@ -31,6 +31,7 @@ use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\UserRoleController;
 use App\Http\Controllers\DamageStockController;
 use App\Http\Controllers\CashReconciliationController;
+use App\Http\Controllers\ShiftController;
 
 // Protect this route with sanctum
 Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
@@ -237,5 +238,9 @@ Route::apiResource('damage_stocks', DamageStockController::class);
 Route::post('damage_stocks/{id}/restore', [DamageStockController::class, 'restore']);
 
 //CASH RECONCILIATION 
-Route::apiResource('cash-reconciliations', CashReconciliationController::class);
-Route::post('cash-reconciliations/{id}/restore', [CashReconciliationController::class, 'restore']);
+Route::apiResource('cash_reconciliations', CashReconciliationController::class);
+Route::post('cash_reconciliations/{id}/restore', [CashReconciliationController::class, 'restore']);
+
+//SHIFT 
+Route::apiResource('shifts', ShiftController::class);
+Route::post('shifts/{id}/restore', [ShiftController::class, 'restore']);
