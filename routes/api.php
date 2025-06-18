@@ -25,20 +25,22 @@ use App\Http\Controllers\TaxController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VendorController;
+use App\Http\Controllers\RoleController;
+use App\Http\Controllers\PermissionModuleController;
+use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\UserRoleController;
+use App\Http\Controllers\DamageStockController;
+use App\Http\Controllers\CashReconciliationController;
 
 // Protect this route with sanctum
 Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
     return $request->user();
 });
 
-
-// User Routes
 // User Routes
 Route::get('/users', [UserController::class, 'index']);
 Route::post('/users', [UserController::class, 'store']);
 Route::post('/login', [UserController::class, 'login']);
-
-
 
 // ITEM GROUP 
 Route::get('/item-groups', [ItemGroupController::class, 'index']);
@@ -200,3 +202,40 @@ Route::get('/item_brands/{id}', [BrandController::class, 'show']);
 Route::post('/item_brands', [BrandController::class, 'store']);
 Route::put('/item_brands/{id}', [BrandController::class, 'update']);
 Route::delete('/item_brands/{id}', [BrandController::class, 'destroy']);
+
+//ROLES 
+Route::get('/roles', [RoleController::class, 'index']);
+Route::get('/roles/{id}', [RoleController::class, 'show']);
+Route::post('/roles', [RoleController::class, 'store']);
+Route::put('/roles/{id}', [RoleController::class, 'update']);
+Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
+
+
+//PERMISSION MODULES 
+Route::get('/permission_modules', [PermissionModuleController::class, 'index']);
+Route::get('/permission_modules/{id}', [PermissionModuleController::class, 'show']);
+Route::post('/permission_modules', [PermissionModuleController::class, 'store']);
+Route::put('/permission_modules/{id}', [PermissionModuleController::class, 'update']);
+Route::delete('/permission_modules/{id}', [PermissionModuleController::class, 'destroy']);
+
+//PERMISSIONs
+Route::get('/permissions', [PermissionController::class, 'index']);
+Route::get('/permissions/{id}', [PermissionController::class, 'show']);
+Route::post('/permissions', [PermissionController::class, 'store']);
+Route::put('/permissions/{id}', [PermissionController::class, 'update']);
+Route::delete('/permissions/{id}', [PermissionController::class, 'destroy']);
+
+//USER ROLES    
+Route::get('/user_roles', [UserRoleController::class, 'index']);
+Route::get('/user_roles/{id}', [UserRoleController::class, 'show']);
+Route::post('/user_roles', [UserRoleController::class, 'store']);
+Route::put('/user_roles/{id}', [UserRoleController::class, 'update']);
+Route::delete('/user_roles/{id}', [UserRoleController::class, 'destroy']);
+
+//DAMAGE STOCKS 
+Route::apiResource('damage_stocks', DamageStockController::class);
+Route::post('damage_stocks/{id}/restore', [DamageStockController::class, 'restore']);
+
+//CASH RECONCILIATION 
+Route::apiResource('cash-reconciliations', CashReconciliationController::class);
+Route::post('cash-reconciliations/{id}/restore', [CashReconciliationController::class, 'restore']);
