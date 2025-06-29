@@ -8,10 +8,9 @@ use Illuminate\Support\Facades\Validator;
 
 class UserRoleController extends Controller
 {
-    // Display a listing of user roles with pagination
     public function index(Request $request)
     {
-        $perPage = $request->query('per_page', 10); // Default to 10 items per page
+        $perPage = $request->query('per_page', 10);
         $userRoles = UserRole::with(['user', 'role'])->paginate($perPage);
         
         return response()->json([
@@ -28,7 +27,6 @@ class UserRoleController extends Controller
         ], 200);
     }
 
-    // Store a newly created user role
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -51,7 +49,6 @@ class UserRoleController extends Controller
         ], 201);
     }
 
-    // Display a specific user role
     public function show($id)
     {
         $userRole = UserRole::with(['user', 'role'])->find($id);
@@ -67,7 +64,6 @@ class UserRoleController extends Controller
         ], 200);
     }
 
-    // Update a specific user role
     public function update(Request $request, $id)
     {
         $userRole = UserRole::find($id);
@@ -98,7 +94,6 @@ class UserRoleController extends Controller
         ], 200);
     }
 
-    // Delete a specific user role (soft delete)
     public function destroy($id)
     {
         $userRole = UserRole::find($id);
@@ -116,7 +111,6 @@ class UserRoleController extends Controller
         ], 200);
     }
 
-    // Restore a soft-deleted user role
     public function restore($id)
     {
         $userRole = UserRole::withTrashed()->find($id);
@@ -139,6 +133,34 @@ class UserRoleController extends Controller
             'success' => true,
             'data' => ['user_role' => $userRole],
             'message' => 'User role restored'
+        ], 200);
+    }
+
+    public function check(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id',
+            'role_id' => 'required|exists:roles,id',
+            'id' => 'sometimes|exists:user_roles,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $query = UserRole::where('user_id', $request->user_id)->where('role_id', $request->role_id);
+        if ($request->has('id')) {
+            $query->where('id', '!=', $request->id);
+        }
+
+        $exists = $query->exists();
+
+        return response()->json([
+            'success' => true,
+            'exists' => $exists
         ], 200);
     }
 }

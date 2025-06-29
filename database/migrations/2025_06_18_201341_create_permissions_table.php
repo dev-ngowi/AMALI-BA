@@ -19,7 +19,7 @@ return new class extends Migration
             $table->boolean('can_read')->default(false);
             $table->boolean('can_update')->default(false);
             $table->boolean('can_delete')->default(false);
-            $table->timestamp('created_at')->useCurrent();
+            $table->timestamp();
             $table->softDeletes();
         });
     }

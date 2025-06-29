@@ -21,6 +21,7 @@ return new class extends Migration
             $table->float('amount');
             $table->index('invoice_id');
             $table->index('item_id');
+            $table->timestamp();
         });
     }
 

@@ -23,13 +23,14 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Display a listing of the invoices.
+     * Display a listing of the invoices with pagination.
      */
-    public function index()
+    public function index(Request $request)
     {
+        $perPage = $request->input('per_page', 10); // Default to 10 items per page
         $invoices = Invoice::with(['order', 'supplier', 'customer', 'items'])
-            ->get()
-            ->map(function ($invoice) {
+            ->paginate($perPage)
+            ->through(function ($invoice) {
                 return [
                     'id' => $invoice->id,
                     'invoice_number' => $invoice->invoice_number,
@@ -58,7 +59,15 @@ class InvoiceController extends Controller
             });
 
         return response()->json([
-            'data' => $invoices,
+            'data' => $invoices->items(),
+            'pagination' => [
+                'total' => $invoices->total(),
+                'per_page' => $invoices->perPage(),
+                'current_page' => $invoices->currentPage(),
+                'last_page' => $invoices->lastPage(),
+                'next_page_url' => $invoices->nextPageUrl(),
+                'prev_page_url' => $invoices->previousPageUrl()
+            ],
             'message' => 'success'
         ], 200);
     }

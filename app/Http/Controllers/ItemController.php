@@ -15,6 +15,7 @@ use App\Models\ItemCost;
 use App\Models\ItemPrice;
 use App\Models\ItemTax;
 use App\Models\BrandApplicableItem;
+use App\Models\Unit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -23,10 +24,157 @@ use Carbon\Carbon;
 
 class ItemController extends Controller
 {
+    
+    public function getItemById($id)
+    {
+        try {
+            $defaultStoreId = 1; // Match the Python function's default store_id
+
+            $item = Item::whereNull('deleted_at')->find($id);
+
+            if (!$item) {
+                Log::info('Item not found', ['id' => $id]);
+                return response()->json([
+                    'message' => 'Item not found'
+                ], 404);
+            }
+
+            $itemUnit = ItemUnit::where('item_id', $id)
+                ->leftJoin('units', 'item_units.selling_unit_id', '=', 'units.id')
+                ->select('units.name as item_unit')
+                ->first();
+
+            $itemPrice = ItemPrice::where('item_id', $id)
+                ->where('store_id', $defaultStoreId)
+                ->first();
+
+            $itemStock = ItemStock::where('item_id', $id)
+                ->join('stocks', 'item_stocks.stock_id', '=', 'stocks.id')
+                ->where('stocks.store_id', $defaultStoreId)
+                ->select('item_stocks.stock_quantity')
+                ->first();
+
+            $data = [
+                'item_name' => $item->name,
+                'item_unit' => $itemUnit ? $itemUnit->item_unit : 'Unit',
+                'item_price' => $itemPrice ? floatval($itemPrice->amount) : 0.0,
+                'stock_quantity' => $itemStock ? floatval($itemStock->stock_quantity) : 0.0,
+            ];
+
+            Log::info('Fetched item by ID', [
+                'id' => $id,
+                'data' => $data
+            ]);
+
+            return response()->json([
+                'data' => $data,
+                'message' => 'Item retrieved successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching item by ID: ' . $e->getMessage(), [
+                'id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message' => 'Internal server error',
+                'error' => 'Failed to fetch item: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    public function indexSaleItems(Request $request)
+    {
+        try {
+            $searchQuery = $request->input('searchQuery');
+            $ids = $request->input('ids') ? explode(',', $request->input('ids')) : null;
+            $storeId = $request->input('store_id', 1); // Default store_id
+
+            $query = Item::query()->with([
+                'itemUnits.sellingUnit',
+                'itemPrices' => function ($q) use ($storeId) {
+                    $q->where('store_id', $storeId);
+                },
+                'itemStocks' => function ($q) use ($storeId) {
+                    $q->join('stocks', 'item_stocks.stock_id', '=', 'stocks.id')
+                      ->where('stocks.store_id', $storeId)
+                      ->select('item_stocks.*');
+                },
+                'itemImages.image'
+            ])->whereNull('deleted_at');
+
+            if ($ids) {
+                $query->whereIn('id', $ids);
+            } elseif ($searchQuery) {
+                $query->where(function ($q) use ($searchQuery) {
+                    $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($searchQuery) . '%'])
+                      ->orWhereHas('itemBarcodes.barcode', function ($q) use ($searchQuery) {
+                          $q->whereRaw('LOWER(code) LIKE ?', ['%' . strtolower($searchQuery) . '%']);
+                      });
+                });
+            } else {
+                $query->take(10); // Limit to 10 items by default
+            }
+
+            $items = $query->get();
+
+            $data = $items->map(function ($item) use ($storeId) {
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'item_prices' => $item->itemPrices->map(function ($price) {
+                        return [
+                            'amount' => floatval($price->amount),
+                            'store_id' => $price->store_id,
+                            'unit_id' => $price->unit_id
+                        ];
+                    })->toArray(),
+                    'item_stocks' => $item->itemStocks->map(function ($stock) {
+                        return [
+                            'stock_quantity' => floatval($stock->stock_quantity),
+                            'stock_id' => $stock->stock_id
+                        ];
+                    })->toArray(),
+                    'item_units' => [
+                        'selling_unit' => $item->itemUnits->first() && $item->itemUnits->first()->sellingUnit
+                            ? ['name' => $item->itemUnits->first()->sellingUnit->name]
+                            : ['name' => 'Unit']
+                    ],
+                    'item_images' => $item->itemImages->map(function ($itemImage) {
+                        return [
+                            'file_path' => $itemImage->image ? $itemImage->image->file_path : null
+                        ];
+                    })->toArray()
+                ];
+            });
+
+            Log::info('Fetched items for sales', [
+                'count' => $items->count(),
+                'ids' => $ids,
+                'searchQuery' => $searchQuery,
+                'store_id' => $storeId
+            ]);
+
+            return response()->json([
+                'data' => $data,
+                'message' => 'Items retrieved successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error fetching items for sales: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'message' => 'Internal server error',
+                'error' => 'Failed to fetch items: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function index(Request $request)
     {
         try {
-            $perPage = $request->input('per_page', 100);
+            $perPage = $request->input('per_page', 50);
             $page = $request->input('page', 1);
             $searchQuery = $request->input('searchQuery');
 
@@ -85,36 +233,66 @@ class ItemController extends Controller
         }
     }
 
-    public function show($id)
+   public function show($id)
     {
         try {
+            $storeId = request()->input('store_id', 1); // Default store_id
+
             $item = Item::with([
-                'category',
-                'itemType',
-                'itemGroup',
-                'itemBarcodes.barcode',
-                'itemUnits.buyingUnit',
                 'itemUnits.sellingUnit',
-                'itemImages.image',
-                'brand.brand',
-                'itemStores.store',
-                'stocks.store',
-                'itemStocks.stock',
-                'itemCosts.unit',
-                'itemPrices.unit',
-                'itemTaxes.tax'
+                'itemPrices' => function ($q) use ($storeId) {
+                    $q->where('store_id', $storeId);
+                },
+                'itemStocks' => function ($q) use ($storeId) {
+                    $q->join('stocks', 'item_stocks.stock_id', '=', 'stocks.id')
+                      ->where('stocks.store_id', $storeId)
+                      ->select('item_stocks.*');
+                },
+                'itemImages.image'
             ])->whereNull('deleted_at')->find($id);
 
             if (!$item) {
+                Log::info('Item not found', ['id' => $id]);
                 return response()->json([
                     'message' => 'Item not found'
                 ], 404);
             }
 
-            Log::info('Fetched item', ['id' => $id]);
+            $data = [
+                'id' => $item->id,
+                'name' => $item->name,
+                'item_prices' => $item->itemPrices->map(function ($price) {
+                    return [
+                        'amount' => floatval($price->amount),
+                        'store_id' => $price->store_id,
+                        'unit_id' => $price->unit_id
+                    ];
+                })->toArray(),
+                'item_stocks' => $item->itemStocks->map(function ($stock) {
+                    return [
+                        'stock_quantity' => floatval($stock->stock_quantity),
+                        'stock_id' => $stock->stock_id
+                    ];
+                })->toArray(),
+                'item_units' => [
+                    'selling_unit' => $item->itemUnits->first() && $item->itemUnits->first()->sellingUnit
+                        ? ['name' => $item->itemUnits->first()->sellingUnit->name]
+                        : ['name' => 'Unit']
+                ],
+                'item_images' => $item->itemImages->map(function ($itemImage) {
+                    return [
+                        'file_path' => $itemImage->image ? $itemImage->image->file_path : null
+                    ];
+                })->toArray()
+            ];
+
+            Log::info('Fetched item for sales', [
+                'id' => $id,
+                'store_id' => $storeId
+            ]);
 
             return response()->json([
-                'data' => $item,
+                'data' => $data,
                 'message' => 'Item retrieved successfully'
             ], 200);
         } catch (\Exception $e) {
@@ -126,6 +304,95 @@ class ItemController extends Controller
             return response()->json([
                 'message' => 'Internal server error',
                 'error' => 'Failed to fetch item: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    /**
+     * Get details for a specific item and store combination.
+     * This includes buying_unit_id, purchase_rate, selling_price, and unit name.
+     *
+     * @param  int  $itemId
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getItemDetails($itemId, Request $request)
+    {
+        try {
+            $storeId = $request->query('store_id');
+
+            if (!$storeId) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => ['store_id' => ['The store_id parameter is required.']]
+                ], 422);
+            }
+
+            // Find the item
+            $item = Item::whereNull('deleted_at')->find($itemId);
+
+            if (!$item) {
+                return response()->json([
+                    'message' => 'Item not found'
+                ], 404);
+            }
+
+            // Get the buying unit ID and name from ItemUnit table
+            $itemUnit = ItemUnit::where('item_id', $itemId)
+                ->leftJoin('units', 'item_units.buying_unit_id', '=', 'units.id')
+                ->select('item_units.buying_unit_id', 'units.name as buying_unit_name')
+                ->first();
+
+            $buyingUnitId = $itemUnit ? $itemUnit->buying_unit_id : null;
+            $buyingUnitName = $itemUnit ? $itemUnit->buying_unit_name : null;
+
+            // Get the purchase rate (cost) for the specific item and store
+            $itemCost = ItemCost::where('item_id', $itemId)
+                                ->where('store_id', $storeId)
+                                ->first();
+            $purchaseRate = $itemCost ? $itemCost->amount : 0;
+
+            // Get the selling price for the specific item and store
+            $itemPrice = ItemPrice::where('item_id', $itemId)
+                                  ->where('store_id', $storeId)
+                                  ->first();
+            $sellingPrice = $itemPrice ? $itemPrice->amount : 0;
+
+            if (is_null($buyingUnitId) && $purchaseRate === 0 && $sellingPrice === 0) {
+                return response()->json([
+                    'message' => 'No specific details found for this item in the selected store.',
+                    'data' => null
+                ], 404);
+            }
+
+            Log::info('Fetched item details for PO form', [
+                'item_id' => $itemId,
+                'store_id' => $storeId,
+                'buying_unit_id' => $buyingUnitId,
+                'buying_unit_name' => $buyingUnitName,
+                'purchase_rate' => $purchaseRate,
+                'selling_price' => $sellingPrice
+            ]);
+
+            return response()->json([
+                'data' => [
+                    'buying_unit_id' => $buyingUnitId,
+                    'buying_unit_name' => $buyingUnitName,
+                    'purchase_rate' => $purchaseRate,
+                    'selling_price' => $sellingPrice,
+                ],
+                'message' => 'Item details retrieved successfully'
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching item details: ' . $e->getMessage(), [
+                'item_id' => $itemId,
+                'store_id' => $request->query('store_id'),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'message' => 'Internal server error',
+                'error' => 'Failed to fetch item details: ' . $e->getMessage()
             ], 500);
         }
     }
