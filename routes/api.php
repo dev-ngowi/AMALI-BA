@@ -36,6 +36,9 @@ use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\VirtualDeviceController;
 use App\Http\Controllers\PrinterSettingController;
 use App\Http\Controllers\Reports\SaleReportsController;
+use App\Http\Controllers\Reports\InventoryReportsController;
+use App\Http\Controllers\Reports\FinanceReportsController;
+use App\Http\Controllers\Reports\TransactionReportController;
 
 // Protect this route with sanctum
 Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
@@ -43,10 +46,53 @@ Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
 });
 
 // Reports: Sales summary
-Route::post('/sale-summary', [SaleReportsController::class, 'previewSalesSummaryData'])->name('sale-summary');
-Route::get('/sale-summary/download', [SaleReportsController::class, 'downloadSalesSummaryData'])->name('sale-summary.download');
+Route::post('/reports/sale-summary', [SaleReportsController::class, 'previewSalesSummaryData'])->name('sale-summary');
+Route::post('/reports/sale-summary/download', [SaleReportsController::class, 'downloadSalesSummaryData'])->name('sale-summary.download');
+Route::post('/reports/sale-detailed', [SaleReportsController::class, 'previewSaleDetailedData'])->name('sale-detailed');
+Route::post('/reports/sale-detailed/download', [SaleReportsController::class, 'downloadSaleDetailedData'])->name('sale-detailed.download');
+Route::post('/reports/payment-summary', [SaleReportsController::class, 'previewPaymentSummaryData'])->name('payment-summary');
+Route::post('/reports/payment-summary/download', [SaleReportsController::class, 'downloadPaymentSummaryData'])->name('payment-summary.download');
+Route::post('/reports/top-selling-items', [SaleReportsController::class, 'previewTopSellingItems'])->name('top-selling-items');
+Route::post('/reports/top-selling-items/download', [SaleReportsController::class, 'downloadTopSellingItems'])->name('top-selling-items.download');
 
+// Reports: Inventory
+Route::post('/reports/stock-ledger', [InventoryReportsController::class, 'previewStockLedgerReport'])->name('stock-ledger');
+Route::post('/reports/stock-ledger/download', [InventoryReportsController::class, 'downloadStockLedgerReport'])->name('stock-ledger.download');
+Route::post('/reports/stock-level', [InventoryReportsController::class, 'previewStockLevelReport'])->name('stock-level');
+Route::post('/reports/stock-level/download', [InventoryReportsController::class, 'downloadStockLevelReport'])->name('stock-level.download');
+Route::post('/reports/stock-value', [InventoryReportsController::class, 'previewStockValueReport'])->name('stock-value');
+Route::post('/reports/stock-value/download', [InventoryReportsController::class, 'downloadStockValueReport'])->name('stock-value.download');
+Route::post('/reports/damage-stock', [InventoryReportsController::class, 'previewDamageStockReport'])->name('damage-stock');
+Route::post('/reports/damage-stock/download', [InventoryReportsController::class, 'downloadDamageStockReport'])->name('damage-stock.download');
 
+// Reports: Finance
+Route::post('/reports/expenses', [FinanceReportsController::class, 'previewExpensesReport'])->name('reports.expenses.preview');
+Route::post('/reports/expenses/download', [FinanceReportsController::class, 'downloadExpensesReport'])->name('reports.expenses.download');
+
+Route::post('/reports/daily-financial', [FinanceReportsController::class, 'previewDailyFinancialReport'])->name('reports.daily_financial.preview');
+Route::post('/reports/daily-financial/download', [FinanceReportsController::class, 'downloadDailyFinancialReport'])->name('reports.daily_financial.download');
+
+Route::post('/reports/business-health', [FinanceReportsController::class, 'previewBusinessHealthReport'])->name('reports.business_health.preview');
+Route::post('/reports/business-health/download', [FinanceReportsController::class, 'downloadBusinessHealthReport'])->name('reports.business_health.download');
+
+// Transaction Reports Routes
+Route::post('/reports/purchase-order-summary', [TransactionReportController::class, 'previewPurchaseOrderSummary'])->name('reports.purchase_order_summary.preview');
+Route::post('/reports/purchase-order-summary/download', [TransactionReportController::class, 'downloadPurchaseOrderSummary'])->name('reports.purchase_order_summary.download');
+
+Route::post('/reports/purchase-order-detailed', [TransactionReportController::class, 'previewPurchaseOrderDetailed'])->name('reports.purchase_order_detailed.preview');
+Route::post('/reports/purchase-order-detailed/download', [TransactionReportController::class, 'downloadPurchaseOrderDetailed'])->name('reports.purchase_order_detailed.download');
+
+Route::post('/reports/good-receipt-note', [TransactionReportController::class, 'previewGoodReceiptNote'])->name('reports.good_receipt_note.preview');
+Route::post('/reports/good-receipt-note/download', [TransactionReportController::class, 'downloadGoodReceiptNote'])->name('reports.good_receipt_note.download');
+
+Route::post('/reports/good-receipt-note-summary', [TransactionReportController::class, 'previewGoodReceiptNoteSummary'])->name('reports.good_receipt_note_summary.preview');
+Route::post('/reports/good-receipt-note-summary/download', [TransactionReportController::class, 'downloadGoodReceiptNoteSummary'])->name('reports.good_receipt_note_summary.download');
+
+Route::post('/reports/payment-summary', [TransactionReportController::class, 'previewPaymentSummary'])->name('reports.payment_summary.preview');
+Route::post('/reports/payment-summary/download', [TransactionReportController::class, 'downloadPaymentSummary'])->name('reports.payment_summary.download');
+
+Route::post('/reports/order-item', [TransactionReportController::class, 'previewOrderItemReport'])->name('reports.order_item.preview');
+Route::post('/reports/order-item/download', [TransactionReportController::class, 'downloadOrderItemReport'])->name('reports.order_item.download');
 
 // User Routes
 Route::get('/users', [UserController::class, 'index']);

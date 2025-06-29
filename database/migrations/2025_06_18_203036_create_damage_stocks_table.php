@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('damage_stocks', function (Blueprint $table) {
             $table->id();
             $table->foreignId('item_id')->constrained('items')->onDelete('cascade');
+            $table->foreignId('store_id')->constrained('stores')->onDelete('cascade');
             $table->unsignedInteger('quantity')->default(0);
             $table->timestamp('damage_date')->useCurrent();
             $table->text('reason')->nullable();
