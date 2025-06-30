@@ -45,6 +45,16 @@ Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
     return $request->user();
 });
 
+Route::get('/test-mpdf', function () {
+    try {
+        $mpdf = new \Mpdf\Mpdf();
+        $mpdf->WriteHTML('<h1>Test</h1>');
+        $mpdf->Output('test.pdf', 'D');
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+});
+
 // Reports: Sales summary
 Route::post('/reports/sale-summary', [SaleReportsController::class, 'previewSalesSummaryData'])->name('sale-summary');
 Route::post('/reports/sale-summary/download', [SaleReportsController::class, 'downloadSalesSummaryData'])->name('sale-summary.download');
